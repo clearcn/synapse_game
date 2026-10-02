@@ -1,71 +1,53 @@
-function game_v1()
-  global stim_flag
-  stim_flag = false;
+function synapse_game()
+  global key
+  key = '';
+  fig = figure('KeyPressFcn', @on_key);
 
-  % --- parameters ---
-  dt     = 0.02;    % time step (s)
-  tau    = 0.5;     % leak time constant (s)
-  V_rest = 0;
-  V_th   = 1;       % firing threshold
-  kick   = 0.35;    % jump in V for each key press
-  refrac = 0.3;     % refractory period (s): no input right after a spike
-  T_game = 30;      % game duration (s)
+  px = 5;  pot = 0;  score = 0;   % position du récepteur, potentiel, score
+  seuil = 5;
+  nt = zeros(0, 3);               % neurotransmetteurs : [x y type]
 
-  % --- state ---
-  V = V_rest;  score = 0;  t = 0;  last_spike = -Inf;
-  n = 200;  Vhist = zeros(1, n);
+  for step = 1:600
+    if ~ishandle(fig), break; end
 
-  % --- graphics ---
-  fig = figure('Name', 'Neuron game', 'KeyPressFcn', @on_key);
-  h = plot(1:n, Vhist, 'b', 'LineWidth', 2);
-  hold on;
-  plot([1 n], [V_th V_th], 'r--');
-  hold off;
-  axis([1 n -0.2 1.6]);
-  ylabel('Membrane potential');
+    % 1. Déplacement du récepteur
+    if ismember(key, {'leftarrow', 'a'}),  px = max(px - 0.8, 1); end
+    if ismember(key, {'rightarrow', 'd'}), px = min(px + 0.8, 9); end
+    key = '';
 
-  % --- game loop ---
-  while ishandle(fig) && t < T_game
-    % 1. input
-    if stim_flag && (t - last_spike) > refrac
-      V = V + kick;
+    % 2. Libération d'un neurotransmetteur (1 = glutamate, 0 = GABA)
+    if rand < 0.08
+      nt(end+1, :) = [10*rand, 10, rand < 0.7];
     end
-    stim_flag = false;
+    nt(:, 2) = nt(:, 2) - 0.3;    % ils tombent dans la fente synaptique
 
-    % 2. update: leak toward rest
-    V = V + dt * (-(V - V_rest) / tau);
+    % 3. Capture par le récepteur
+    arrive = nt(:, 2) < 0.8;
+    pris   = arrive & abs(nt(:, 1) - px) < 1;
+    pot = pot + sum(nt(pris, 3) == 1) - sum(nt(pris, 3) == 0);
+    pot = max(pot, 0);
+    nt = nt(~arrive, :);          % on supprime ceux arrivés en bas
 
-    % 3. spike?
-    spiked = false;
-    if V >= V_th
+    % 4. Potentiel d'action ?
+    if pot >= seuil
       score = score + 1;
-      V = V_rest;
-      last_spike = t;
-      spiked = true;
+      pot = 0;
     end
 
-    % 4. draw
-    if spiked
-      Vhist = [Vhist(2:end), 1.5];    % draw the spike as a tall peak
-    else
-      Vhist = [Vhist(2:end), V];
-    end
-    set(h, 'YData', Vhist);
-    title(sprintf('Score: %d   Time left: %.1f s   (press SPACE)', ...
-                  score, T_game - t));
+    % 5. Dessin
+    cla; hold on;
+    plot(nt(nt(:,3)==1, 1), nt(nt(:,3)==1, 2), 'go', 'MarkerSize', 12, 'LineWidth', 3);
+    plot(nt(nt(:,3)==0, 1), nt(nt(:,3)==0, 2), 'rx', 'MarkerSize', 12, 'LineWidth', 3);
+    plot([px-1 px+1], [0.4 0.4], 'b', 'LineWidth', 8);
+    axis([0 10 0 10]);
+    title(sprintf('Score : %d   Potentiel : %d / %d   (flèches ou A/D)', ...
+                  score, pot, seuil));
     drawnow;
-    pause(dt);
-    t = t + dt;
-  end
-
-  if ishandle(fig)
-    title(sprintf('Game over! Final score: %d', score));
+    pause(0.03);
   end
 end
 
 function on_key(~, evt)
-  global stim_flag
-  if strcmp(evt.Key, 'space')
-    stim_flag = true;
-  end
+  global key
+  key = evt.Key;
 end
